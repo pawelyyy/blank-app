@@ -138,13 +138,11 @@ active_categories = []
 for cat_name in CATEGORIES.keys():
     if cat_name == "Global":
         continue
-    # Streamlit w locie rejestruje status każdego checkboxa
     if st.sidebar.checkbox(cat_name, value=True):
         active_categories.append(cat_name)
 
 # --- PRZETWARZANIE DANYCH ---
 raw_codes = re.split(r'[\s,]+', input_data.strip())
-# Usuwamy duplikaty i puste słowa, filtrujemy "target" i "languages"
 locales = list(dict.fromkeys([code.lower() for code in raw_codes if code and code.lower() not in ["target", "languages"]]))
 
 if not locales or not active_categories:
@@ -160,14 +158,12 @@ else:
 
         valid_locales.append(loc)
         features = {cat: (loc in CATEGORIES[cat]) for cat in active_categories}
-        # Podpis unikalnej kombinacji to po prostu lista (tuple) wartości True/False
         signature = tuple(features[cat] for cat in active_categories)
 
         if signature not in unique_configurations:
             unique_configurations[signature] = {"langs": [], "features": features}
         unique_configurations[signature]["langs"].append(loc.upper())
 
-    # Generowanie ID i przypisanie kolorów
     sig_to_template = {}
     for idx, sig in enumerate(unique_configurations.keys()):
         template_id = idx + 1
@@ -186,50 +182,45 @@ else:
             "Relacja": map_type,
             "Szablon ID": f"#{temp_info['id']}"
         }
-        # Dynamiczne dodawanie kolumn kategorii
         for cat in active_categories:
             row[cat] = "✔️" if features[cat] else ""
         
-        # Zapisujemy kolor w ukrytej kolumnie na później
         row["_Color"] = temp_info["color"]
         data_rows.append(row)
 
-    # Sortowanie danych
     if sort_by == "Alfabetycznie":
         sorted_data = sorted(data_rows, key=lambda x: x['Język'])
     else:
-        # Sortuj najpierw po Szablon ID (jako liczba zdejmując '#'), potem alfabetycznie po języku
         sorted_data = sorted(data_rows, key=lambda x: (int(x['Szablon ID'].replace("#", "")), x['Język']))
 
     df = pd.DataFrame(sorted_data)
 
     # --- ZAKŁADKI ---
-    tab_matrix, tab_templates, tab_export = st.tabs(["📊 Macierz (Graficzna)", "🧩 Wymagane Szablony", "📝 Eksport (Zwykły Tekst)"])
+    tab_matrix, tab_templates, tab_qa, tab_export = st.tabs([
+        "📊 Macierz (Graficzna)", 
+        "🧩 Wymagane Szablony", 
+        "🔍 QA Helper", 
+        "📝 Eksport (Zwykły Tekst)"
+    ])
 
     with tab_matrix:
-        # Legenda Szablonów
         st.markdown("##### Legenda Szablonów")
         cols = st.columns(len(sig_to_template))
         for i, (sig, temp_info) in enumerate(sig_to_template.items()):
             t_id = temp_info["id"]
             color = temp_info["color"]
             with cols[i]:
-                # Wykorzystujemy wbudowany HTML Streamlita dla wizualnych bloczków
                 st.markdown(f'<div style="background-color:{color}; color: #333; padding: 5px; border-radius: 5px; text-align: center;"><b>#{t_id}</b></div>', unsafe_allow_html=True)
         
-        st.write("") # Odstęp
+        st.write("") 
 
-        # Funkcja do stylowania wierszy Pandas DataFrame
         def apply_row_style(row):
             bg_color = df.loc[row.name, "_Color"]
-            # Wymuszamy ciemny kolor fontu, żeby napisy były widoczne na jasnych, pastelowych tłach
             return [f"background-color: {bg_color}; color: #222222"] * len(row)
 
-        # Usunięcie z widoku kolumny technicznej _Color
         display_df = df.drop(columns=["_Color"])
         styled_df = display_df.style.apply(apply_row_style, axis=1)
 
-        # Wyświetlanie tabeli (ukrywamy numery wierszy - indekso)
         st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
     with tab_templates:
@@ -243,7 +234,6 @@ else:
                 active_traits = [cat for cat in active_categories if data['features'][cat]]
                 traits_str = ", ".join(active_traits) if active_traits else "Brak (nie wymaga wariacji)"
 
-                # Rysujemy "kartę" za pomocą HTML
                 st.markdown(f"""
                 <div style="background-color: {bg_color}; color: #222222; padding: 20px; border-radius: 10px; margin-bottom: 10px;">
                     <h4 style="margin-top: 0; color: #111;">Szablon #{t_id}</h4>
@@ -251,6 +241,45 @@ else:
                     <p style="margin-bottom: 0px;"><b>Wymagane funkcje:</b> {traits_str}</p>
                 </div>
                 """, unsafe_allow_html=True)
+
+    with tab_qa:
+        st.markdown("### 🔍 Generowanie linków do testów QA")
+        st.markdown("Wklej link, który zawiera jakikolwiek kod językowy ujęty w ukośniki (np. `/nl-be/`). Aplikacja podmieni go i wygeneruje klikalne linki dla wszystkich rynków wybranych w konfiguracji.")
+        
+        base_url = st.text_input("Link testowy:", placeholder="https://origin-int.xbox.com/nl-be/accessories/controllers/xbox-wireless-controller/home#xbox-design-lab")
+
+        if base_url:
+            # Szukamy wzorca /xx-xx/ lub /xx-xxxx-xx/ (np. /bs-latn-ba/)
+            match = re.search(r'/([a-zA-Z]{2}-[a-zA-Z]{2}|[a-zA-Z]{2}-[a-zA-Z]{4}-[a-zA-Z]{2})/', base_url)
+            
+            if match:
+                original_locale_with_slashes = match.group(0)  # np. /nl-be/
+                original_locale = match.group(1).lower()       # np. nl-be
+                
+                st.success(f"Wykryto kod językowy w podanym linku: **{original_locale}**")
+                
+                for sig, temp_info in sig_to_template.items():
+                    t_id = temp_info["id"]
+                    data = unique_configurations[sig]
+                    bg_color = temp_info["color"]
+                    
+                    # Generowanie listy HTML z linkami
+                    links_html = ""
+                    for lang in sorted(data['langs']):
+                        lang_lower = lang.lower()
+                        new_url = base_url.replace(original_locale_with_slashes, f"/{lang_lower}/")
+                        links_html += f'<li style="margin-bottom: 4px;"><b>{lang}:</b> <a href="{new_url}" target="_blank" style="color: #0056b3; text-decoration: none;">{new_url}</a></li>'
+                    
+                    st.markdown(f"""
+                    <div style="background-color: {bg_color}; color: #222222; padding: 20px; border-radius: 10px; margin-bottom: 10px;">
+                        <h4 style="margin-top: 0; color: #111;">Szablon #{t_id}</h4>
+                        <ul style="margin-bottom: 0;">
+                            {links_html}
+                        </ul>
+                    </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.error("Nie znaleziono kodu językowego w linku. Upewnij się, że link zawiera fragment taki jak np. `/en-us/` lub `/bs-latn-ba/`.")
 
     with tab_export:
         col_w_loc = 12
@@ -262,7 +291,6 @@ else:
         header += " | ".join([cat.ljust(col_widths[cat]) for cat in active_categories])
         report += header + "\n" + "-" * len(header) + "\n"
 
-        # Ponownie budujemy logikę dla czystego tekstu
         for row in sorted_data:
             tid_clean = row['Szablon ID'].replace("#", "")
             feat_bools = {cat: (row[cat] == "✔️") for cat in active_categories}
