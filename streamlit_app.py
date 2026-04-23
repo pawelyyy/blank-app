@@ -307,7 +307,7 @@ else:
             langs = ", ".join(sorted(data['langs']))
             traits = [cat for cat in active_categories if data['features'][cat]]
             traits_str = ", ".join(traits) if traits else "Wszystkie wariacje wyłączone"
-            report += f"🔹 SZABLON {t_id} (Rynki: {langs})\n   Włączone cechy: {traits_str}\n" + "-" * 40 + "\n"
+            report += f"🔹 SZABLON {t_id} (Rynki: {langs})\n   Włączone cechy : {traits_str}\n" + "-" * 40 + "\n"
 
         st.download_button(
             label="💾 Pobierz Raport (.txt)",
